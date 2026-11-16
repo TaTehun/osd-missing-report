@@ -225,7 +225,7 @@
   <div class="hdr-right">
     <span class="hdr-pill pill-green"><span class="dot"></span>ACTIVE</span>
     <span class="hdr-pill pill-dim">Mon–Thu &nbsp;·&nbsp; Fri</span>
-    <span class="hdr-pill pill-dim">v1.0</span>
+    <span class="hdr-pill pill-dim">v1.1</span>
   </div>
 </header>
 
@@ -334,7 +334,7 @@
       <p class="sec-label">// data_sources → output</p>
       <div class="io-wrap">
         <div class="sources-col">
-          <div class="src-row anim-fade-up d1"><span class="src-tag">OS&amp;D</span><span class="src-name">Weekly OS&amp;D Report, per plant (Mon–Thu)</span><span class="src-ext">.xlsx</span><span class="src-badge">9 plants</span></div>
+          <div class="src-row anim-fade-up d1"><span class="src-tag">OS&amp;D</span><span class="src-name">Weekly OS&amp;D Report, per plant (Mon–Thu)</span><span class="src-ext">.xlsx</span><span class="src-badge">8 plants</span></div>
           <div class="src-row anim-fade-up d2"><span class="src-tag">IBD</span><span class="src-name">IB Damage Origin, WKxx (Thu)</span><span class="src-ext">.xlsx/.xlsb</span><span class="src-badge">weekly</span></div>
         </div>
         <div class="io-arrow">
@@ -344,7 +344,8 @@
         <div class="output-card anim-fade-up d3">
           <div class="output-title">W## {code} Missing items from OSD Report.xlsx</div>
           <div class="out-row"><span class="out-key">matching</span><span class="out-val">Serial Number(s) → Model + Qty fallback</span></div>
-          <div class="out-row"><span class="out-key">ovg</span><span class="out-val">OSD_OVG.xlsx, 15wk rolling, OSD schema</span></div>
+          <div class="out-row"><span class="out-key">ovg</span><span class="out-val">OSD_OVG_W##.xlsx, checked 2 weeks back, 15wk rolling</span></div>
+          <div class="out-row"><span class="out-key">master</span><span class="out-val">W##_missing_master.xlsx, open items resolved by serial</span></div>
           <div class="out-row"><span class="out-key">email</span><span class="out-val">per-plant report + status summary via SMTP</span></div>
           <div class="out-row"><span class="out-key">cleanup</span><span class="out-val">5wk file retention · auto-prune</span></div>
         </div>
@@ -458,7 +459,7 @@
 
           <rect class="fc-node-process" x="80" y="160" width="280" height="72" rx="0"/>
           <text class="fc-t-main" x="220" y="183" text-anchor="middle">Validate Each File</text>
-          <text class="fc-t-sub"  x="220" y="200" text-anchor="middle">Summary sheet · O/S/D col · D values · Qty</text>
+          <text class="fc-t-sub"  x="220" y="200" text-anchor="middle">Summary sheet · O/S/D · Model · Qty · D values</text>
           <text class="fc-t-sub"  x="220" y="219" text-anchor="middle" style="fill:rgba(248,113,113,.65)">issues → flagged to file_issues</text>
 
           <rect class="fc-node-ok" x="80" y="270" width="280" height="52" rx="0"/>
@@ -497,7 +498,7 @@
 
           <rect class="fc-node-process" x="460" y="80" width="360" height="52" rx="0"/>
           <text class="fc-t-main" x="640" y="101" text-anchor="middle">IBD vs OSD Compare · Per Plant</text>
-          <text class="fc-t-sub"  x="640" y="118" text-anchor="middle">Serial Number(s) 1:1 · Model+Qty aggregate · consume osd_work</text>
+          <text class="fc-t-sub"  x="640" y="118" text-anchor="middle">QC A/LS out · Serial 1:1 (O→0 retry) · Model+Qty aggregate</text>
 
           <rect class="fc-node-process" x="460" y="170" width="360" height="52" rx="0"/>
           <text class="fc-t-main" x="640" y="191" text-anchor="middle">Identify OVG Candidates</text>
@@ -512,15 +513,15 @@
 
           <rect class="fc-node-process" x="460" y="326" width="360" height="52" rx="0"/>
           <text class="fc-t-main" x="640" y="347" text-anchor="middle">Check vs OVG File</text>
-          <text class="fc-t-sub"  x="640" y="364" text-anchor="middle">same consume logic · OVG deduction · remaining = final</text>
+          <text class="fc-t-sub"  x="640" y="364" text-anchor="middle">OVG from 2 weeks ago · same consume logic · remaining = final</text>
 
           <rect class="fc-node-ok" x="460" y="416" width="360" height="52" rx="0"/>
           <text class="fc-t-main ok" x="640" y="437" text-anchor="middle">Save Missing Report</text>
           <text class="fc-t-sub"    x="640" y="454" text-anchor="middle">W## {code} Missing items.xlsx</text>
 
           <rect class="fc-node-process" x="460" y="506" width="360" height="52" rx="0"/>
-          <text class="fc-t-main" x="640" y="527" text-anchor="middle">Update OVG File</text>
-          <text class="fc-t-sub"  x="640" y="544" text-anchor="middle">concat+prune · (wk-row_wk)%52 · OSD_COLS enforced</text>
+          <text class="fc-t-main" x="640" y="527" text-anchor="middle">Update OVG + Master</text>
+          <text class="fc-t-sub"  x="640" y="544" text-anchor="middle">resolve master by serial · (wk-row_wk)%52 prune</text>
 
           <rect class="fc-node-ok" x="460" y="596" width="360" height="52" rx="0"/>
           <text class="fc-t-main ok" x="640" y="617" text-anchor="middle">Send Emails</text>
@@ -578,27 +579,24 @@
             <span class="code-card-title">Download-Time Validation</span>
             <span class="code-tag">report_downloader_example.py</span>
           </div>
-          <pre><span class="cm"># 4-point check on every downloaded OS&D file</span>
+          <pre><span class="cm"># Checked on every downloaded OS&D file</span>
 <span class="cm"># Runs Mon–Thu so Friday's main.py sees only clean files</span>
-raw = pd.read_excel(path, sheet_name=<span class="st">'Summary'</span>,
-                    header=<span class="kw">None</span>, nrows=<span class="nm">10</span>)
-<span class="kw">if</span> <span class="st">'O/S/D'</span> <span class="kw">not in</span> raw.iloc[<span class="nm">0</span>].values:
-    <span class="kw">return</span> [<span class="st">"'O/S/D' not found in first row"</span>]
+sheet = next((s <span class="kw">for</span> s <span class="kw">in</span> wb.sheetnames
+              <span class="kw">if</span> <span class="st">'summary'</span> <span class="kw">in</span> s.strip().lower()), <span class="kw">None</span>)
+<span class="kw">if</span> sheet <span class="kw">is None</span>:
+    <span class="kw">return</span> [<span class="st">"'Summary' sheet not found"</span>]
 
-df = pd.read_excel(path, sheet_name=<span class="st">'Summary'</span>)
+<span class="cm"># Report every missing header at once, not just the first</span>
+first_row = {str(v).strip().lower() <span class="kw">for</span> v <span class="kw">in</span> raw.iloc[<span class="nm">0</span>].values}
+issues = [<span class="st">f"'{h}' not found in first row"</span>
+          <span class="kw">for</span> h <span class="kw">in</span> (<span class="st">'O/S/D'</span>, <span class="st">'Model'</span>, <span class="st">'Qty'</span>)
+          <span class="kw">if</span> h.lower() <span class="kw">not in</span> first_row]
+<span class="kw">if</span> issues:
+    <span class="kw">return</span> issues
+
 values = df[osd_col].dropna().astype(str).str.strip().str.upper()
 <span class="kw">if</span> <span class="st">'D'</span> <span class="kw">not in</span> values.values:
-    <span class="kw">return</span> [<span class="st">f"No 'D' value: </span><span class="vr">{sorted(values.unique())}</span><span class="st">"</span>]
-
-<span class="cm"># rows without Serial Number must have Model + Qty</span>
-<span class="cm"># isna() alone misses empty-string cells; check both</span>
-no_sn = int((df[sn_col].isna() |
-    df[sn_col].astype(str).str.strip().eq(<span class="st">''</span>)).sum()
-) <span class="kw">if</span> sn_col <span class="kw">else</span> len(df)
-<span class="kw">if</span> no_sn > <span class="nm">0</span> <span class="kw">and</span> mat_col <span class="kw">is None</span>:
-    <span class="kw">return</span> [<span class="st">f"Material/Model missing (</span><span class="vr">{no_sn}</span><span class="st"> rows)"</span>]
-<span class="kw">if</span> mat_col <span class="kw">and</span> qty_col <span class="kw">is None</span>:
-    <span class="kw">return</span> [<span class="st">"Qty column missing"</span>]</pre>
+    <span class="kw">return</span> [<span class="st">f"No 'D' value: </span><span class="vr">{sorted(values.unique())}</span><span class="st">"</span>]</pre>
         </div>
 
         <div class="code-card">
@@ -608,16 +606,16 @@ no_sn = int((df[sn_col].isna() |
           </div>
           <pre><span class="cm"># Serial Number → 1:1 match, drop immediately</span>
 <span class="cm"># One OSD row cannot satisfy two IBD rows</span>
-<span class="kw">if</span> serial_num <span class="kw">and</span> serial_num_col_osd:
-    matched_idx = osd_work[
-        osd_work[serial_num_col_osd]
-        .astype(str).str.strip() == serial_num
-    ].index.tolist()
-    <span class="kw">if</span> matched_idx:
-        osd_work = osd_work.drop(
-            index=matched_idx
-        ).reset_index(drop=<span class="kw">True</span>)
-        <span class="kw">return</span> <span class="nm">0</span>, osd_work
+<span class="kw">if</span> has_serial <span class="kw">and</span> sn_col:
+    osd_serials = osd[sn_col].astype(str).str.strip()
+    idx = osd[osd_serials == sn].index.tolist()
+    <span class="kw">if</span> idx:
+        <span class="kw">return</span> <span class="nm">0</span>, osd.drop(index=idx).reset_index(drop=<span class="kw">True</span>), []
+    <span class="cm"># Retry with leading O read as 0 (data-entry error)</span>
+    idx = osd[osd_serials.apply(_normalize_sn) == sn].index.tolist()
+    <span class="kw">if</span> idx:
+        corrected = osd_serials.iloc[idx].tolist()
+        <span class="kw">return</span> <span class="nm">0</span>, osd.drop(index=idx).reset_index(drop=<span class="kw">True</span>), corrected
 
 <span class="cm"># No serial number → Model + Qty aggregation</span>
 <span class="kw">if</span> material <span class="kw">and</span> mod_col_osd <span class="kw">and</span> qty_col_osd:
@@ -632,7 +630,7 @@ no_sn = int((df[sn_col].isna() |
     osd_work = osd_work.drop(
         index=matched_idx
     ).reset_index(drop=<span class="kw">True</span>)
-    <span class="kw">return</span> max(src_qty - osd_qty, <span class="nm">0</span>), osd_work</pre>
+    <span class="kw">return</span> max(src_qty - osd_qty, <span class="nm">0</span>), osd_work, []</pre>
         </div>
 
         <div class="code-card">
@@ -684,9 +682,10 @@ combined = pd.concat(
 <span class="cm"># Prune records older than 15 weeks (handles year wrap)</span>
 current_wk = int(week.replace(<span class="st">'W'</span>, <span class="st">''</span>))
 combined = combined[combined[<span class="st">'Week'</span>].apply(
-    <span class="kw">lambda</span> w: (current_wk - int(w)) % <span class="nm">52</span> <= <span class="nm">15</span>
+    <span class="kw">lambda</span> w: pd.notna(w) <span class="kw">and</span> (current_wk - int(w)) % <span class="nm">52</span> <= <span class="nm">15</span>
 )]
-combined.to_excel(OVG_FILE, index=<span class="kw">False</span>)</pre>
+<span class="cm"># One OVG file per week; next run reads it two weeks later</span>
+combined.to_excel(_ovg_path(week), index=<span class="kw">False</span>)</pre>
         </div>
 
         <div class="code-card">
