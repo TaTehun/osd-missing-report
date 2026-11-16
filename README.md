@@ -1,4 +1,4 @@
-# OS&D Weekly Missing Report · Automation Pipeline
+# OS&D Missing Report
 
 A weekly Python automation pipeline that downloads OS&D (Over, Short & Damage) reports and IBD Origin files from email, compares them to identify missing items, and distributes plant-level missing reports via email, with no manual steps.
 
@@ -23,7 +23,7 @@ Each week, plant teams submit OS&D reports to a shared mailbox, and an IBD Origi
 ## Project Structure
 
 ```
-osd-weekly-report/
+osd-missing-report/
 ├── main.py                        # Core processing: IBD vs OSD comparison, OVG, report generation
 ├── report_downloader.py           # POP3 downloader entry point + file validation
 ├── run_report_downloader.bat      # Task Scheduler trigger for downloader
