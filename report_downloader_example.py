@@ -59,37 +59,34 @@ def _cleanup(directory: Path, pattern: str, keep: int) -> None:
 def _validate_file(path: Path) -> list[str]:
     """
     Validate a downloaded OS&D report file.
-    Checks: Summary sheet exists, O/S/D column present, at least one D value,
-    and Material/Qty columns present for rows without a Serial Number.
+    Checks: a Summary sheet exists (any casing), O/S/D, Model and Qty headers are in
+    the first row, and the O/S/D column has at least one D value.
     Returns a list of issue strings (empty = valid).
     """
     try:
         try:
-            raw = pd.read_excel(path, sheet_name='Summary', header=None, nrows=10)
+            import openpyxl
+            wb = openpyxl.load_workbook(path, read_only=True)
+            sheet_name = next((s for s in wb.sheetnames if 'summary' in s.strip().lower()), None)
+            wb.close()
+            if sheet_name is None:
+                return ["'Summary' sheet not found"]
+            raw = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=10)
         except Exception as e:
             return [f"Failed to open 'Summary' sheet: {e}"]
 
-        if 'O/S/D' not in raw.iloc[0].values:
-            return ["'O/S/D' not found in first row"]
+        # All missing required headers are reported together
+        first_row = {str(v).strip().lower() for v in raw.iloc[0].values}
+        issues = [f"'{h}' not found in first row" for h in ('O/S/D', 'Model', 'Qty')
+                  if h.lower() not in first_row]
+        if issues:
+            return issues
 
-        df = pd.read_excel(path, sheet_name='Summary')
+        df = pd.read_excel(path, sheet_name=sheet_name)
         osd_col = next((c for c in df.columns if str(c).strip() == 'O/S/D'), None)
-
         values = df[osd_col].dropna().astype(str).str.strip().str.upper()
         if 'D' not in values.values:
             return [f"No 'D' value found in O/S/D column (values: {sorted(values.unique())})"]
-
-        sn_col  = next((c for c in df.columns if 'serial' in str(c).strip().lower()), None)
-        mat_col = next((c for c in df.columns if 'model' in str(c).strip().lower()
-                        or 'material' in str(c).strip().lower()), None)
-        qty_col = next((c for c in df.columns if 'qty' in str(c).strip().lower()), None)
-
-        no_sn_count = int((df[sn_col].isna() | (df[sn_col].astype(str).str.strip() == '')).sum()) \
-            if sn_col else len(df)
-        if no_sn_count > 0 and mat_col is None:
-            return [f"Material/Model column missing ({no_sn_count} row(s) without Serial Number)"]
-        if mat_col and qty_col is None:
-            return ["Qty column missing (required for Material-based matching)"]
 
         return []
 
@@ -156,11 +153,16 @@ def run():
     if result.error:
         logger.error(f"Download error: {result.error}")
 
-    # 2. Validate each downloaded OSD file
-    from utils.date_utils import previous_week
-    week = previous_week()
+    # 2. Validate this run's downloaded OSD files (previous + current week)
+    import pytz
+    from utils.date_utils import previous_week, current_week
+    weeks = [previous_week(), current_week()]
+    is_friday = datetime.now(pytz.timezone('America/Chicago')).weekday() == 4
+    week  = current_week() if is_friday else previous_week()  # Friday: current week
     for f in OSD_DIR.iterdir():
         if not f.is_file():
+            continue
+        if not any(w.upper() in f.name.upper() for w in weeks):
             continue
         plant = next((p for p in PLANT_CODES if p.upper() in f.name.upper()), None)
         if plant not in result.downloaded_osd:

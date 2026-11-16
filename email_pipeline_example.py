@@ -20,7 +20,8 @@ _BASE        = DESKTOP_PATH / 'your-project' / 'data'
 
 OSD_DIR = _BASE / 'osd report'
 IBD_DIR = _BASE / 'IB Damage'
-OVG_DIR = _BASE / 'OVG'
+OVG_DIR    = _BASE / 'OVG'
+MASTER_DIR = _BASE / 'master'
 
 # .env file path, holds POP3/SMTP credentials
 ENV_PATH = Path(r'\\your-server\path\to\.env')
@@ -88,7 +89,7 @@ import poplib
 import logging
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from email.parser import Parser
 from email.utils import parsedate_to_datetime
 from typing import List, Optional
@@ -132,13 +133,14 @@ class EmailDownloader:
         OSD_DIR.mkdir(parents=True, exist_ok=True)
         IBD_DIR.mkdir(parents=True, exist_ok=True)
 
-        from utils.date_utils import previous_week, previous_week_ibd
-        week     = previous_week()
+        from utils.date_utils import previous_week, current_week, previous_week_ibd
+        # Friday runs need the current week's reports too
+        weeks    = [previous_week(), current_week()]
         week_ibd = previous_week_ibd()
 
         try:
             self._connect()
-            return self._scan(week, week_ibd)
+            return self._scan(weeks, week_ibd)
         except Exception as e:
             logger.error(f"Download failed: {e}", exc_info=True)
             return DownloadResult(error=str(e))
@@ -162,7 +164,7 @@ class EmailDownloader:
             finally:
                 self._connection = None
 
-    def _scan(self, week: str, week_ibd: str) -> DownloadResult:
+    def _scan(self, weeks: List[str], week_ibd: str) -> DownloadResult:
         _, mails_list, _ = self._connection.list()
         all_mails = list(reversed(mails_list))  # newest first
 
@@ -172,7 +174,7 @@ class EmailDownloader:
         received_times:   dict = {}
         ibd_downloaded    = False
         ibd_received_time = None
-        found_plants: set = set()
+        found: set = set()  # (week, plant) pairs already saved
 
         for mail in all_mails:
             idx     = self._parse_index(mail)
@@ -195,19 +197,23 @@ class EmailDownloader:
             clean_subject = re.sub(r'[&\-–\[\] ]', ' ', raw_subject).lower()
             time_str = mail_dt.strftime('%m/%d/%Y %H:%M CST')
 
-            # Match OS&D reports
-            for plant in PLANT_CODES:
-                if plant not in found_plants:
-                    tokens = OSD_SUBJECT_TOKENS + [week, plant]
-                    if all(t.lower() in clean_subject for t in tokens):
-                        msg   = self._fetch_email(idx)
-                        saved = self._save_attachments(msg, OSD_DIR)
-                        if saved:
-                            downloaded_osd.append(plant)
-                            received_times[plant] = time_str
-                            found_plants.add(plant)
-                            logger.info(f"OSD saved: {plant} | {headers.get('Subject', '')}")
-                        break
+            # Match OS&D reports; our own "Missing" report replies share the same tokens, so skip them
+            if 'missing' not in clean_subject:
+                for plant in PLANT_CODES:
+                    for week in weeks:
+                        if (week, plant) in found:
+                            continue
+                        tokens = OSD_SUBJECT_TOKENS + [week, plant]
+                        if all(t.lower() in clean_subject for t in tokens):
+                            msg = self._fetch_email(idx)
+                            # Rename to a fixed pattern so main.py's glob finds it whatever the sender named it
+                            saved = self._save_attachments(msg, OSD_DIR, rename=f"{week} {plant} OS&D Report")
+                            if saved:
+                                downloaded_osd.append(plant)
+                                received_times[plant] = time_str
+                                found.add((week, plant))
+                                logger.info(f"OSD saved: {plant} ({week}) | {headers.get('Subject', '')}")
+                                break
 
             # Match IBD Origin
             if not ibd_downloaded:
@@ -222,7 +228,7 @@ class EmailDownloader:
 
         return DownloadResult(
             downloaded_osd=downloaded_osd,
-            missing_osd=[p for p in PLANT_CODES if p not in found_plants],
+            missing_osd=[p for p in PLANT_CODES if not any((w, p) in found for w in weeks)],
             received_times=received_times,
             ibd_downloaded=ibd_downloaded,
             ibd_received_time=ibd_received_time,
@@ -240,12 +246,12 @@ class EmailDownloader:
         _, lines, _ = self._connection.retr(idx)
         return Parser().parsestr(b'\r\n'.join(lines).decode('utf-8', 'replace'))
 
-    def _save_attachments(self, msg, dest: Path) -> List[str]:
+    def _save_attachments(self, msg, dest: Path, rename: str = None) -> List[str]:
         content_type = msg.get_content_type().lower()
         if content_type.startswith('multipart'):
             results = []
             for part in msg.get_payload():
-                results += self._save_attachments(part, dest)
+                results += self._save_attachments(part, dest, rename=rename)
             return results
         if not (content_type.startswith('application') or content_type == 'text/csv'):
             return []
@@ -253,8 +259,11 @@ class EmailDownloader:
         if not filename:
             return []
         filename = filename.replace('\r\n', '').replace('\t', ' ').strip()
-        if Path(filename).suffix.lower() not in {'.xlsx', '.xlsb', '.xls', '.csv'}:
+        ext = Path(filename).suffix.lower()
+        if ext not in {'.xlsx', '.xlsb', '.xls', '.csv'}:
             return []
+        if rename:
+            filename = rename + ext
         path = dest / filename
         path.write_bytes(msg.get_payload(decode=True))
         logger.info(f"Saved: {path}")
@@ -356,6 +365,11 @@ def send_status_report(sender: EmailSender, result, week: str) -> bool:
     if result.fail:
         lines += ["<b>Fail:</b>"]
         lines += [f"&nbsp;&nbsp;ㆍ {code}: {reason}" for code, reason in result.fail]
+        lines += [""]
+    if result.sn_corrected:
+        lines += ["<b>SN Corrected (O→0):</b>"]
+        for code, sns in result.sn_corrected.items():
+            lines += [f"&nbsp;&nbsp;ㆍ {code}: {len(sns)} SN corrected: {', '.join(sns)}"]
         lines += [""]
     lines += [f"Please find attached the OSD OVG Report for {week}.", ""]
     lines += ["Thank you"]
