@@ -35,6 +35,11 @@ def previous_week() -> str:
     return f"W{(datetime.today() - timedelta(weeks=1)).isocalendar()[1]}"
 
 
+def two_weeks_ago() -> str:
+    """Return the ISO week two weeks back as 'WXX', e.g. 'W19'."""
+    return f"W{(datetime.today() - timedelta(weeks=2)).isocalendar()[1]}"
+
+
 def previous_week_ibd() -> str:
     """Return previous ISO week as 'WKXX', e.g. 'WK20'."""
     return f"WK{(datetime.today() - timedelta(weeks=1)).isocalendar()[1]}"
